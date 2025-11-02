@@ -1,7 +1,6 @@
 # Effects of Professor Performance and Student Behavior on Teaching Evaluations (Miami University MKT)
 
 This repository contains the analysis for the study **"Effects of Professor Performance and Student Behavior on Overall Teaching Evaluation in Marketing Courses at Miami University"**. The goal of the project is to understand which instructor-level and student-level factors most strongly predict students’ **overall instructor rating (iRating)** in Marketing (MKT) courses.
----
 
 ## Project Summary
 
