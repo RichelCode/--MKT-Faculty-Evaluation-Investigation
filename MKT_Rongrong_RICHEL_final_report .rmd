@@ -1,0 +1,1847 @@
+---
+title: "Effects of Professor Performance and Student Behavior on Overall Teaching Evaluation in Marketing Courses at Miami University"
+output: 
+  html_document:
+    theme: journal       
+    toc: true           
+    toc_float: true     
+    toc_depth: 3       
+    number_sections: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+**Author**: Rongrong Qian, Richel Attafuah
+
+**Date**: 2025-10-08
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(gridExtra)
+library(cowplot)
+library(corrplot)
+library(car)
+library(tibble)
+library(reshape2)
+library(stringr)
+library(purrr)
+library(ranger)
+library(lmerTest) # for mixed models
+library(lme4)
+library(broom.mixed)
+```
+
+# Introduction
+
+Student Evaluations of Teaching (SETs) are key tools used in higher
+education. They measure teaching quality and instructor performance.
+Results are often used for faculty reviews, promotions, and decisions
+about course improvement. Although SETs are used widely, there is much
+discussion about the specific factors that shape a student's idea of
+"Overall Instructor Effectiveness." Accurately identifying and measuring
+these factors is important. This ensures evaluations are fair and valid,
+and it provides information to help improve teaching strategies.
+
+The core statistical goal of this report is to explore the links between
+specific evaluation metrics and the student's overall rating of the
+instructor. The aim is to build a model that explains the sources of
+variation in "instructor effectiveness" scores. Specifically, this study
+will focus on three main research questions:
+
+1.  The effect of professor performance measures: How much do specific
+    measurements of instructor teaching performance statistically
+    influence the student's final "overall instructor evaluation"?
+
+2.  The effect of student behavior measures: Is there a statistical link
+    between measurements related to student behavior or course
+    engagement and the overall rating they give the instructor?
+
+3.  Variation by course type: Do the relationships found in questions 1
+    and 2 change in a significant way depending on the type of course
+    (for example, a core requirement versus an elective class)?
+
+By answering these questions, this study hopes to provide clear insights
+to areas of improvements that can be implemented. These results will
+provide better guidance to enhance course delivery quality.
+
+# Methods
+
+## Data
+
+The dataset includes student evaluations from every section of marketing
+(MKT) courses at Miami University. The data covers the fall and spring
+semesters from 2013 to 2017. Per the study design, all instructor
+identifications (InstID) were anonymized, and evaluation data was
+aggregated by course section.
+
+The dataset contains a moderator variable (Course type), 6 measures of
+student behavior (prefixed with "s"), and 15 measures of professor
+performance (prefixed with "i"). For all survey items, any N/A response
+was coded as -1 and is omitted from all measure calculations.
+
+### Dependent Variable (Overall Rating)
+
+The primary dependent variable for this analysis is `iRating`. This
+variable corresponds to the survey question "What is your overall rating
+of the instructor?". This item was measured on a five point scale and
+numerically coded for analysis as follows:
+
+-   Unsatisfactory = 0
+
+-   Poor = 1
+
+-   Average = 2
+
+-   Good = 3
+
+-   Excellent = 4
+
+### Professor Performance
+
+The first set of predictors includes 14 measures assessing specific
+aspects of professor performance. These items were measured on a five
+point agreement scale, numerically coded as: Strongly Disagree (0),
+Disagree (1), Neutral (2), Agree (3), and Strongly Agree (4).
+
+The specific variable names and their corresponding survey questions are
+listed in the table below.
+
+```{r professor-variables, echo=FALSE, warning=FALSE}
+# Create a data frame
+prof_measures <- data.frame(
+  Measure = c("iStandards", "iChallenged", "iPrepared", "iConcepts", "iEnthusiasm",
+              "iAskQues", "iQuesEffect", "iHours", "iRating", "iWelQues",
+              "iParticipate", "iDemo", "iAnalyProb", "iTopic", "iUnderstand"),
+  Survey_Question = c(
+    "The instructor held students to high academic standards.",
+    "The instructor effectively challenged me to think and to learn.",
+    "The instructor was well prepared.",
+    "Examinations and/or other graded components covered course concepts in a challenging manner.",
+    "The instructor showed enthusiasm for the subject.",
+    "I felt free to ask questions and to make comments in class.",
+    "The instructor dealt with questions and comments effectively.",
+    "The instructor was generally available during office hours.",
+    "What is your overall rating of the instructor?",
+    "My instructor welcomed students' questions.",
+    "My instructor offered opportunities for active participation to understand course content.",
+    "My instructor demonstrated concern for student learning.",
+    "In this course I learned to analyze complex problems or think about complex issues.",
+    "My appreciation for this topic has increased as a result of this course.",
+    "I have gained an understanding of this material"
+  )
+)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+# Create and style the table
+kable(prof_measures, caption = "Table1: Labels for Professor Performance Measures") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center"
+  )
+
+```
+
+### Student Behavior
+
+The second set of predictors includes 6 measures assessing specific
+aspects of student behavior. These items were measured on a five point
+frequency scale, numerically coded as: Never (0), Rarely (1), Sometimes
+(2), Often (3), and Always (4).
+
+```{r student-variables, echo=FALSE, warning=FALSE}
+# Create a data frame for student measures
+student_measures <- data.frame(
+  Measure = c("sPositive", "sAttended", "sPrepared", "sEngaged", "sUpToDate", "sHelp"),
+  Survey_Question = c(
+    "I took responsibility for helping to make this course a positive learning experience.",
+    "I attended class.",
+    "I prepared for class.",
+    "When I attended class, I was actively engaged.",
+    "I stayed up-to-date in the course work.",
+    "I sought help when I needed it."
+  )
+)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+# Create and style the student table
+kable(student_measures, caption = "Table 2: Labels for Student Behavior Measures") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center"
+  )
+```
+
+### Moderator Variable (Course Type)
+
+The moderator variable for this analysis is `CourseType`. This
+categorical variable is coded with four distinct levels representing
+different marketing course classifications:
+
+-   1 = FSB Core
+
+-   2 = MKT Core
+
+-   3 = MKT Elective
+
+-   4 = MKT Capstone
+
+## Statistical Analysis
+
+### Standardized Scores for Comparison
+
+The variables in this study, such as 'iRating' and other teaching items,
+used different scales. These scales have different anchors and likely
+different response patterns. This makes their original scores, including
+their means, not directly comparable. To fix this problem of scale
+heterogeneity and create a common framework, all professor performance
+and student behavior variables were standardized. They were converted to
+standard scores (Z scores) with a mean of 0 and a standard deviation
+of 1. This change makes it possible to validly interpret and compare the
+relative effect sizes and standing of all measures.
+
+### Weight Adjustment
+
+To ensure that evaluation scores based on a larger number of student
+responses have a greater influence on the overall analysis, a weighting
+system was applied. This approach accounts for the higher precision and
+reliability of scores derived from larger samples.
+
+The weight for each course section is determined by the absolute number
+of students who completed the evaluation.
+
+The initial raw weight for each course section is set as the number of
+completed evaluations: $$
+Raw\ Weight_{i} = Completed_{i} \tag{1}
+$$
+
+To preserve the correct scale for statistical inference, these raw
+weights are then normalized so that their sum equals the total number of
+course sections in the analysis (N). The final weight is calculated as:
+
+$$
+Weight_{i} = \frac{Raw\ Weight_{i}}{\sum_{j=1}^{N} Raw\ Weight_{j}} \times N \tag{2}
+$$ Where:
+
+-   $\text{Weight}_i$ is the final normalized weight for course section i.
+
+-   $\text{Completed}_i$ is the number of students who completed the
+    evaluation for course section i.
+
+-   $N$ is the total number of course sections included in the analysis.
+
+### Multicollinearity
+
+Before fitting any models, multicollinearity among the predictor
+variables needs to be accessed using Variance Inflation Factor (VIF)
+analysis. High VIF values (commonly above 5 or 10) indicate that a
+predictor is highly correlated with other predictors, which can inflate
+standard errors and make coefficient estimates unstable. If
+multicollinearity is detected, **random forest** modeling will be
+considered as a strategy to assess variable importance, as it is less
+sensitive to multicollinearity issues. However, random forest regression does not solve the multicollinearity problem, it only mitigates its impact on variable importance measures. 
+
+The **conceptual grouping method** was considered to reduce multicollinearity by combining correlated predictors into composite scores based on theoretical constructs. This approach simplifies the model and reduces redundancy among predictors.
+
+### Independence
+
+A series of **hierarchical linear mixed effects models** was used to analyze the data, accounting for course sections nested within instructors. The baseline model included random intercepts and random slopes for instructors. Then sequentially added blocks of predictors: first student behavior variables, followed by course type, and finally their interaction terms. Each step was evaluated using Likelihood Ratio Tests (LRTs) to assess significant improvements in model fit. All models were fit with maximum likelihood (ML) for comparison, and the final selected model was estimated using restricted maximum likelihood (REML) for parameter reporting.
+
+### Model 1: Weighted Two Level Random Effects Model (Instructor-only, random intercept)
+
+To estimate average effects of instructor performance while accounting
+for sections nested within instructors and participation-rate weights:
+
+$$
+iRating_{ij} = \beta_0 + \sum_{k=1}^{K} \beta_k X_{ijk} + u_j + \epsilon_{ij} \tag{2}
+$$ Where:
+
+-   $iRating_{ij}$ is the overall instructor rating for course section
+    $i$ taught by instructor $j$.
+
+-   $\beta_0$ is the overall intercept.
+
+-   $\beta_k$ are the fixed effect coefficients for the $K$ standardized
+    predictor variables $X_{ijk}$ (professor performance and student
+    behavior measures).
+
+-   $u_j$ is the random effect for instructor $j$, capturing unobserved
+    heterogeneity among instructors.
+
+-   $\epsilon_{ij}$ is the residual error term for course section $i$
+    taught by instructor $j$.
+
+Constrains:
+
+-   $u_j$ \~ N(0, $\sigma_u^2$))
+
+-   $\epsilon_{ij}$ \~ N(0, $\sigma_{\epsilon}^2$))
+
+-   $u_j$ and $\epsilon_{ij}$ are assumed to be independent.
+
+### Model 1-2: Weighted Two Level Random Effects Model (Instructor-only, random intercept + random slopes)
+To assess if the effects of key professor performance measures vary by instructor, random slopes were added for selected predictors:
+
+$$
+iRating_{ij} = \beta_0 + \sum_{k=1}^{K} \beta_k X_{ijk} + u_j + \sum_{m=1}^{M} v_{jm} X_{ijm} + \epsilon_{ij} \tag{2.1}
+$$ 
+
+Where:
+
+- $v_{jm}$ are the random slope effects for selected $M$ predictors
+
+- $X_{ijm}$, allowing their effects to vary by instructor $j$.
+
+-   Other terms as in Model 1.
+
+Constraints:
+
+- $v_{jm}$ \~ N(0, $\sigma_v^2$))
+
+- $v_{jm}$ are assumed to be independent of $u_j$ and $\epsilon_{ij}$.
+
+
+
+### Model 2: Weighted Two Level Random Effects Model (+ Student Behavior Block)
+
+Add student behavior measures to assess incremental explanatory value
+beyond instructor measures:
+
+$$
+iRating_{ij} = \beta_0 + \sum_{k=1}^{K} \beta_k X_{ijk} + \sum_{l=1}^{L} \beta_l S_{ijl} + u_j + \epsilon_{ij} \tag{3}
+$$ Where:
+
+-   $S_{ijl}$ are the $L$ standardized student behavior measures for
+    course section $i$ taught by instructor $j$.
+
+-   Other terms as in Model 1.
+
+### Model 3: Weighted Two Level Random Effects Model (+ Course Type Main Effects)
+
+Add course type indicators to control for systematic differences across
+types:
+
+$$
+iRating_{ij} = \beta_0 + \sum_{k=1}^{K} \beta_k X_{ijk} + \sum_{l=1}^{L} \beta_l S_{ijl} + \gamma_j C_{j} + u_j + \epsilon_{ij} \tag{4}
+$$ Where:
+
+-   $C_{j}$ is the vector of CourseType dummies for instructor j’s
+    section (e.g., FSB Core, MKT Core, MKT Elective, MKT Capstone; one
+    omitted as reference).
+
+-   Other terms as in Model 1.
+
+### Model 4: Weighted Two-Level Random Effects with Course Type (Interactions)
+
+To test if the effects of professor performance and student behavior
+measures vary by course type, interaction terms were added:
+
+$$
+iRating_{ij} = \beta_0 + \sum_{k=1}^{K} \beta_k X_{ijk} + \sum_{l=1}^{L} \beta_l S_{ijl} + \gamma_j C_{j} + \delta_{I} (X_{ij} * C_{j}) + \theta_{S} (S_{ij} * C_{J}) + u_j + \epsilon_{ij} \tag{5}
+$$ Where:
+
+-   $\delta_{I}$ are the coefficients for the interaction terms between
+    professor performance measures $X_{ijk}$ and course type $C_{j}$.
+
+-   $\theta_{S}$ are the coefficients for the interaction terms between
+    student behavior measures $S_{ijl}$ and course type $C_{j}$.
+
+-   Other terms as in Model 1.
+
+The coefficients $\delta_{I}$ and $\theta_{S}$ will be tested for
+significance to determine if the relationships between the predictors
+and overall instructor rating differ by course type.
+
+## Software
+
+All statistical analyses and data visualizations were performed using the `R (version 4.5.1)` within the `RStudio` integrated development environment (version 2025.05.0).
+
+The analytical workflow relied on a suite of specialized packages. Data manipulation and transformation were conducted using the `tidyverse` ecosystem, including core packages like `dplyr` and `tidyr`. Statistical modeling was primarily accomplished with the `lmerTest` package for fitting and evaluating linear mixed-effects models. The `car` package was used for model diagnostics, such as checking for multicollinearity.
+
+For data visualization, `ggplot2` was used to create primary plots, `corrplot` was employed for correlation matrices, and `cowplot` helped arrange final figures. Finally, the `knitr` and `kableExtra` packages were utilized to generate reproducible reports and format high-quality tables.
+
+# Results
+
+## Exploratory Data Analysis Results
+
+```{r load-data, echo=FALSE, warning=FALSE}
+# read data
+mkt <- read.csv("/Users/rongrongqian/Desktop/660/2/CombinedData.csv")
+#glimpse(mkt)
+mkt <- mkt %>%
+  mutate(
+    # change CourseType to factor 
+    CourseType = factor(CourseType, 
+                        levels = c(1, 2, 3, 4),
+                        labels = c("FSB Core", "MKT Core", "MKT Elective", "MKT Capstone"))
+  )
+```
+
+### Distribution of Overall Instructor Rating (iRating)
+
+The best measure of overall instructor effectiveness is the `iRating`
+variable. This variable captures the student's holistic evaluation of
+their instructor. The distribution of `iRating` across all course
+sections is shown in the histogram below.
+
+```{r irating-distribution, echo=FALSE, warning=FALSE, fig.cap="Figure 1: Distribution of Overall Instructor Ratings (iRating)."}
+# Count zero cases
+zero_cases <- mkt %>% filter(iRating == 0)
+n_zero <- nrow(zero_cases)
+
+# Plot distribution
+ggplot(mkt, aes(x = iRating)) +
+  geom_histogram(binwidth = 0.25, boundary = 0, closed = "left", fill = "steelblue", color = "black") +
+  scale_x_continuous(breaks = seq(0, 4, 1), limits = c(0, 4)) +
+  labs(x = "Overall Instructor Rating (0–4 Scale)",
+       y = "Count",
+       caption = paste0("Zero-rating sections detected: ", n_zero)) +
+  theme_minimal()+
+  theme(plot.caption = element_text(hjust = 0, size = 12),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black"))
+
+
+```
+
+```{r irating-zero-audit, message=FALSE, warning=FALSE, echo=FALSE}
+zero_tbl <- zero_cases |>
+  dplyr::mutate(
+    Participation = if_else(Enrolled > 0, Completed / Enrolled, NA_real_)
+  ) |>
+  dplyr::select(Term, CourseType, Enrolled, Completed, Participation, iRating) |>
+  dplyr::arrange(dplyr::desc(Participation))
+
+knitr::kable(zero_tbl, digits = 2,
+             caption = "Table 3: Audit of iRating = 0 sections (check data quality/context)") |>
+  kableExtra::kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                            full_width = FALSE, position = "center")
+
+
+```
+
+Figure 1 shows the distribution of overall instructor ratings (iRating)
+across all course sections. The majority of ratings cluster between 3
+and 4, corresponding to the categories “Good” and “Excellent,” which
+indicates that students generally provide favorable evaluations of their
+instructors. A smaller number of responses fall below 2, but these are
+relatively rare. Notably, **two outlier scores of 0 (shown in Table 3) were identified as technical artifacts and were excluded** from the analysis to ensure the integrity of the results.
+
+
+```{r allzero-flags, message=FALSE,echo=FALSE, warning=FALSE}
+# Identify evaluation item columns
+i_cols <- names(mkt)[grepl("^i", names(mkt))]           # includes iRating
+s_cols <- names(mkt)[grepl("^s", names(mkt))]
+item_cols <- c(i_cols, s_cols)
+
+# Ensure participation exists (used to detect structural missing)
+mkt <- mkt %>%
+  mutate(Participation = if_else(Enrolled > 0, Completed/Enrolled, NA_real_))
+
+# Row-level checks
+mkt_audit <- mkt %>%
+  mutate(
+    # Count of non-missing evaluation items
+    n_items_nonmiss = rowSums(!is.na(pick(all_of(item_cols)))),
+    # Among non-missing items, are ALL equal to zero?
+    all_items_zero  = if_else(
+      n_items_nonmiss > 0,
+      rowSums(pick(all_of(item_cols)) == 0, na.rm = TRUE) == n_items_nonmiss,
+      FALSE
+    ),
+    # Structural missing (no respondents → all evals should be NA after cleaning)
+    structural_missing = (Completed == 0 | is.na(Completed)),
+    # Usable row = has at least 1 non-missing, non-zero item (after cleaning zeros if needed)
+    any_nonzero_item = if_else(
+      n_items_nonmiss > 0,
+      rowSums(pick(all_of(item_cols)) > 0, na.rm = TRUE) > 0,
+      FALSE
+    ),
+    usable_section = (!structural_missing) & any_nonzero_item
+  )
+```
+
+
+### Participation rate by instructor(InstID)
+
+Participation rate is calculated as the number of students who completed
+the evaluation divided by the total number of students enrolled in the
+course section. Each instructor (InstID) may teach multiple sections, so
+the average participation rate across all sections taught by each
+instructor were calculated.
+
+```{r participation-rate, echo=FALSE, warning=FALSE, fig.cap="Figure 2: Average Participation Rate by Instructor (InstID)."}
+# Calculate average participation rate by InstID
+participation_rate <- mkt %>%
+  group_by(InstID) %>%
+  mutate(Participation = (Completed / Enrolled) * 100) %>%
+  summarise(avg_participation = mean(Participation, na.rm = TRUE)) %>%
+  arrange(desc(avg_participation))
+# Plot average participation rate by InstID
+ggplot(participation_rate, aes(x = reorder(InstID, -avg_participation), y = avg_participation)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(x = "Instructor ID (InstID)",
+       y = "Average Participation Rate") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black"))
+```
+
+Figure 2 illustrates significant variability in participation rates among instructors, which range from below 50% to nearly 100%. This variation impacts the representativeness of the evaluation data.
+Instructors with **low participation rates** need to be **assigned small weights** to the evaluation results, as they may not accurately represent
+the views of the entire class. Conversely, instructors with high
+participation rates can be more confident that their evaluation scores
+reflect a broader range of student opinions.
+
+
+### Descriptive Statistics
+
+The descriptive statistics table below provides a summary of the central
+tendency and dispersion for each professor performance and student
+behavior measure.
+
+```{r descriptive-stats, echo=FALSE, warning=FALSE}
+# Descriptive statistics for professor performance measures
+prof_means <- mkt %>%
+  # FIX: Exclude the non-numeric InstID column from the selection
+  select(starts_with("i"), -InstID) %>%
+  summarise(across(everything(), list(mean = ~mean(.x, na.rm = TRUE),
+                                        sd = ~sd(.x, na.rm = TRUE),
+                                        median = ~median(.x, na.rm = TRUE),
+                                        min = ~min(.x, na.rm = TRUE),
+                                        max = ~max(.x, na.rm = TRUE)))) %>%
+  pivot_longer(everything(), names_to = c("Measure", ".value"), names_sep = "_")
+
+# Descriptive statistics for student behavior measures (This code was already correct)
+student_means <- mkt %>%
+  select(starts_with("s")) %>%
+  summarise(across(everything(), list(mean = ~mean(.x, na.rm = TRUE),
+                                        sd = ~sd(.x, na.rm = TRUE),
+                                        median = ~median(.x, na.rm = TRUE),
+                                        min = ~min(.x, na.rm = TRUE),
+                                        max = ~max(.x, na.rm = TRUE)))) %>%
+  pivot_longer(everything(), names_to = c("Measure", ".value"), names_sep = "_")
+
+# Combine both tables
+descriptive_stats <- bind_rows(prof_means, student_means) %>%
+  dplyr::mutate(dplyr::across(c(mean, sd), ~ round(.x, 2)))
+
+# Display the table
+kable(descriptive_stats, caption = "Table 4: Descriptive Statistics for Professor Performance and Student Behavior Measures") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center"
+  )
+```
+
+Table 4 shows several key observations:
+
+-   All variables are on a 0–4 scale. Means sit high (≈3.19–3.78) with
+    medians 3.27–3.67, showing a positive skew and a ceiling pattern.
+
+-   Overall rating (iRating) averages 3.19 and has one of the largest
+    SDs (0.56), so it varies more than other variables.
+
+-   Instructor performance variables tend to have smaller means
+    (≈3.19–3.57) and larger spread (SD ≈ 0.37–0.56) than student
+    behavior variables (means≈3.30–3.78, SD ≈ 0.30–0.40).
+
+
+**The low mean and large standard deviation of instructor ratings
+reflect the subjective and diverse evaluations of teaching quality by
+students as consumers, as well as the complexity of teaching itself.**
+
+**The high mean and small standard deviation of student self ratings
+reflect the widespread self serving bias, where people tend to give
+themselves a positive evaluation to maintain their self identity.**
+
+### Average Overall Rating by Course Type
+
+The overall instructor rating (iRating) not only varies by professor
+performance and student behavior but also shows differences across
+course types. The table and box plot below summarize the average iRating
+for each course type.
+
+```{r summary_table,echo=FALSE, warning=FALSE, message=FALSE}
+# Summary table: count, mean, sd by CourseType
+course_rating_tbl <- mkt %>%
+  group_by(CourseType) %>%
+  summarise(
+    n = n(),
+    mean_iRating = mean(iRating, na.rm = TRUE),
+    sd_iRating   = sd(iRating, na.rm = TRUE)
+  ) %>%
+  arrange(desc(mean_iRating)) %>%
+  mutate(across(c(mean_iRating, sd_iRating), ~round(.x, 2)))
+
+kable(course_rating_tbl,
+      caption = "Table 5: Overall Instructor Rating (iRating) by Course Type — count, mean, and SD") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+```{r course-type-boxplot, echo=FALSE, warning=FALSE, message=FALSE, fig.width=7, fig.height=5, fig.cap="Figure 3: Box Plot of Overall Instructor Rating (iRating) by Course Type."}
+# Box plot of iRating by CourseType
+
+ggplot(mkt, aes(x = CourseType, y = iRating)) +
+  geom_boxplot(outlier.shape = NA, width = 0.6, fill = "skyblue") +
+  geom_jitter( width = 0.15, alpha = 0.35, size = 1) +
+  geom_point(data=course_rating_tbl,
+             aes(y = mean_iRating),
+             shape = 23, size = 3, fill = "white", color = "black") +
+  labs(x = "Course Type",
+       y = "Overall Instructor Rating (iRating)"
+       ) +
+  theme_minimal() +
+  theme(legend.position = "none",
+        panel.grid.major = element_line(color = "grey90"),
+        panel.grid.minor = element_blank())
+```
+
+Table 5 and Figure 3 showed the distribution of overall instructor
+ratings (iRating) across the four course types. Sample sizes of each
+course type are large, ranging from 63 to 229 sections, which provides a
+solid basis for comparison.
+
+-   **MKT Elective Courses**
+
+Elective courses received the highest average rating
+(Mean=3.32,SD=0.50). This result supports a self selection hypothesis:
+when students choose courses that match their personal interests, they
+tend to show higher engagement and give more positive evaluations.
+
+-   **Required Courses**
+
+In contrast, the two types of required courses, **FSB Core**
+(Mean=3.16,SD=0.45) and **MKT Core** (Mean=3.14,SD=0.56), received the
+lowest average ratings. This suggests the mandatory nature of the
+courses, the student population (some may lack internal interest), and
+different workload expectations may combine to produce more critical
+assessments.
+
+-   **Capstone Courses**
+
+Capstone courses (Mean=3.22,SD=0.89) present a special situation. First,
+this mean was significantly lowered by two extreme outliers (an irating
+of 0 due to 0% completion), which suggests the true mean is likely
+higher. Second, this course type has the largest standard deviation
+(SD=0.89), reflecting great variability in student experiences. This may
+be due to the advanced, complex nature of the course, such as difficult
+team projects. This intense structure might create both highly positive
+and frustrating experiences, leading to polarized ratings.
+
+
+
+### Average Rating by Term
+
+The overall instructor rating (iRating) may also vary by academic term
+(semester). The table and line plot below summarize the average iRating
+for each term.
+
+```{r summary_table_term, echo=FALSE, warning=FALSE, message=FALSE}
+# Summary table: count, mean, sd by Term
+term_rating_tbl <- mkt %>%
+  group_by(Term) %>%
+  summarise(
+    n = n(),
+    mean_iRating = mean(iRating, na.rm = TRUE),
+    sd_iRating   = sd(iRating, na.rm = TRUE)
+  ) %>%
+  arrange(Term) %>%
+  mutate(across(c(mean_iRating, sd_iRating), ~round(.x, 2)))
+```
+
+```{r term-lineplot, echo=FALSE, warning=FALSE, message=FALSE, fig.cap="Figure 4: Line Plot of Overall Instructor Rating (iRating) by Term."}
+# Prepare data for line plot
+mkt_term <- mkt %>%
+  mutate(
+    Year    = as.integer(str_sub(Term, 1, 4)),
+    SemCode = str_sub(Term, 5, 6),
+    Semester = case_when(
+      SemCode == "20" ~ "Spring",
+      SemCode == "10" ~ "Fall",
+      TRUE ~ "Other"
+    ),
+    sem_ord = case_when(  
+      Semester == "Spring" ~ 1L,
+      Semester == "Fall"   ~ 2L,
+      TRUE                 ~ 3L
+    ),
+    Term_label = paste(Year, Semester)  
+  )
+
+# Summary statistics by Term
+term_summary <- mkt_term %>%
+  group_by(Year, Semester, sem_ord, Term_label) %>%
+  summarise(
+    n = n(),
+    mean_iRating = mean(iRating, na.rm = TRUE),
+    sd_iRating   = sd(iRating, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(Year, sem_ord)
+
+# Ensure Term_label is a factor with levels in the order of appearance
+lvl_order <- unique(term_summary$Term_label)  
+term_summary <- term_summary %>%
+  mutate(Term_label = factor(Term_label, levels = lvl_order))
+
+
+ggplot(term_summary, aes(x = Term_label, y = mean_iRating,
+                         group = Semester, color = Semester)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = mean_iRating - sd_iRating,
+                    ymax = mean_iRating + sd_iRating),
+                width = 0.1, alpha = 0.5) +
+  labs(x = "Academic Term", y = "Mean iRating (± SD)", color = "Semester") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+As shown in Figure 4, mean instructor ratings for Spring semesters remained stable over the observed period, exhibiting only minor fluctuations. In contrast, Fall semester ratings showed a gradual decline from 2013 to 2016 before partially recovering in 2017. Furthermore, the standard deviation was consistently larger for Spring semesters, indicating greater rating variability compared to Fall semesters. This suggests a higher degree of heterogeneity in Spring, which could be attributed to a
+broader mix of course types and instructors, wider variations in class
+sizes and completion rates, or a more diverse student population.
+
+The observed decline and subsequent recovery in Fall ratings may be
+linked to changes in the course portfolio (e.g., a higher proportion of
+foundational or challenging courses offered in Fall), instructor
+turnover, or curriculum adjustments that were implemented and stabilized
+after 2016.
+
+### Interaction of Course Type and Term
+
+The interaction between course type and academic term may also influence
+the overall instructor rating (iRating). The line plot below visualizes
+the mean iRating for each course type across different terms.
+
+```{r interaction-plot, echo=FALSE, warning=FALSE, message=FALSE, fig.width=10, fig.height=6, fig.cap="Figure 5: Interaction Plot of Overall Instructor Rating (iRating) by Course Type and Term."}
+# Summary statistics by CourseType and Term
+interaction_summary <- mkt_term %>%
+  group_by(CourseType, Year, Semester, sem_ord, Term_label) %>%
+  summarise(
+    n = n(),
+    mean_iRating = mean(iRating, na.rm = TRUE),
+    sd_iRating   = sd(iRating, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(CourseType, Year, sem_ord)
+# Ensure Term_label is a factor with levels in the order of appearance
+interaction_summary <- interaction_summary %>%
+  mutate(Term_label = factor(Term_label, levels = lvl_order))
+# Create interaction plot
+ggplot(interaction_summary, aes(x = Term_label, y = mean_iRating,
+                                 group = CourseType, color = CourseType)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = mean_iRating - sd_iRating,
+                    ymax = mean_iRating + sd_iRating),
+                width = 0.1, alpha = 0.5) +
+  labs(x = "Academic Term", y = "Mean iRating (± SD)", color
+       = "Course Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Figure 5 displays the mean instructor ratings (iRatings) by course type and academic term. While mean ratings for most course types are clustered between 3.0 and 3.5, their trajectories suggest a potential **interaction effect**. The most notable pattern is the high volatility of MKT Capstone ratings compared to the relative stability of other course types. However, the wide and overlapping standard deviation bars indicate that many observed differences between course types within a given term may not be statistically significant. Furthermore, the instability in the MKT Capstone series could be an artifact of a small sample size.
+
+### Scatter plots
+
+```{r scatter-plots, echo=FALSE, warning=FALSE, message=FALSE, fig.width=12, fig.height=15,fig.cap="Figure 6: Scatter Plots of All Professor Performance and Student Behavior Measures versus Overall Instructor Rating (iRating), with Points Colored by Course Type and Overall Linear Model Fit."}
+# Scatter plots for professor performance measures vs iRating
+mkt_clean <- mkt %>%
+  filter(!is.na(iRating) & !dplyr::near(iRating, 0))
+# professor performance measures
+prof_vars    <- names(mkt_clean)[grepl("^i", names(mkt_clean)) & names(mkt_clean) != "iRating"]
+prof_plots <- lapply(prof_vars, function(var) {
+  ggplot(mkt_clean, aes_string(x = var, y = "iRating")) +
+    geom_point(aes(color = CourseType), alpha = 0.3) +
+    geom_smooth(method = "lm", se = FALSE, color = "blue") +
+    labs(title = paste("Scatter Plot of", var, "vs iRating"),
+         x = var, y = "iRating") +
+    theme_minimal() +
+    theme(legend.position = "none")
+})
+
+# Scatter plots for student behavior measures vs iRating
+student_vars <- names(mkt_clean)[grepl("^s", names(mkt_clean))]
+student_plots <- lapply(student_vars, function(var) {
+  ggplot(mkt_clean, aes_string(x = var, y = "iRating")) +
+    geom_point(aes(color = CourseType), alpha = 0.3) +
+    geom_smooth(method = "lm", se = FALSE, color = "blue") +
+    labs(title = paste("Scatter Plot of", var, "vs iRating"),
+         x = var, y = "iRating") +
+    theme_minimal() +
+    theme(legend.position = "none")
+})
+
+# last plot keep the legend
+last_x <- tail(student_vars, 1)
+last_plot <- ggplot(mkt_clean, aes_string(x = last_x, y = "iRating")) +
+  geom_point(aes(color = CourseType), alpha = 0.3) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(title = paste("Scatter Plot of", last_x, "vs iRating"),
+       x = last_x, y = "iRating") +
+  theme_minimal()
+
+# extract legend
+legend <- get_legend(last_plot)
+
+# remove legend from last plot
+last_plot <- last_plot + theme(legend.position = "none")
+
+# Combine all plots
+all_plots <- c(prof_plots, student_plots[-length(student_plots)], list(last_plot))
+
+plot_grid(
+  plot_grid(plotlist = all_plots, ncol = 3),
+  legend,
+  rel_widths = c(5, 0.5)
+)
+```
+
+Here are the patterns shown in the Figure 6:
+
+-   All professor performance measures (i\*) show a positive linear
+    relationship with overall rating (iRating). A small cluster of
+    observations appears at very low predictor values; given the 1 to 4
+    scale, values near zero likely reflect miscoding of missing
+    responses as zero, partial submissions, uncorrected reverse coding,
+    or a few sections with unusually low evaluations. These points have
+    high leverage and can alter ordinary least squares fits, inflating
+    standard errors and making significance depend on a handful of
+    observations.
+
+-   Student behavior measures (s\*) also show positive linear
+    relationships with iRating, with the strongest slopes for engagement
+    and positive attitude and weaker slopes for attendance, preparation,
+    and staying up to date. Scores cluster near 3 to 4 on the 1 to 4
+    scale, suggesting a ceiling effect that can weaken correlations.
+    Again, a few low outliers may have high leverage.
+
+### Correlation Analysis
+
+```{r correlation-heatmap, echo=FALSE, warning=FALSE, fig.width=10, fig.height=8, fig.cap="Figure 7: Heat Map of Correlation Matrix for Professor Performance and Student Behavior Measures"}
+# heat map for correlation matrix
+cor_data <- mkt %>%
+  select(starts_with("s"), 
+         starts_with("i"), 
+         -InstID)
+# Calculate the correlation matrix
+cor_matrix <- cor(cor_data, use = "pairwise.complete.obs")
+
+# Plot the correlation matrix using corrplot
+corrplot(cor_matrix,
+         method = "color",         
+         type = "upper",           
+         order = "hclust",         
+         addCoef.col = "black",    
+         tl.col = "black",         
+         tl.srt = 45,              
+         number.cex = 0.7,         
+         diag = FALSE              
+)
+
+
+```
+
+From the correlation heat map in Figure 7, we can observe several key
+patterns:
+
+-   Correlations are uniformly positive, indicating the measures move in
+    the same direction.
+
+-   Instructor performance items are highly correlatedand and form a tight cluster. Their high correlation with the overall instructor rating (iRating) suggests they measure a similar underlying construct.
+
+-   Student behavior items are moderately correlated with one another
+    and show only modest associations with iRating.
+
+-   iHours exhibits the weakest associations across the matrix.
+
+**The instructor items are highly redundant. To avoid multicollinearity, a composite or dimension reduction approach needs to be considered.**
+
+**Student behavior appears to be a related but distinct construct, contributing more modestly to iRating.**
+
+```{r VIF, echo=FALSE, warning=FALSE, message=FALSE}
+# predictors: all i* except iRating, plus all s*
+predictors <- c(
+  names(mkt)[grepl("^i", names(mkt)) & names(mkt) != "iRating"],
+  names(mkt)[grepl("^s", names(mkt))]
+)
+
+form <- as.formula(paste("iRating ~", paste(predictors, collapse = " + ")))
+m <- lm(form, data = mkt)
+
+v <- car::vif(m)
+
+# Handle numeric vector (VIF) vs matrix (GVIF when factors are present)
+if (is.matrix(v)) {
+  vif_tbl <- as.data.frame(v) |>
+    rownames_to_column("Variable") |>
+    mutate(
+      # Adjust GVIF to comparable VIF scale when df > 1
+      VIF = ifelse(df > 1, GVIF^(1/(2*df)), GVIF)
+    ) |>
+    select(Variable, VIF)
+} else {
+  vif_tbl <- tibble(Variable = names(v), VIF = as.numeric(v))
+}
+
+vif_tbl <- vif_tbl |>
+  arrange(desc(VIF)) |>
+  mutate(
+    VIF = round(VIF, 2),
+    Flag = case_when(
+      VIF > 10 ~ "High",
+      VIF > 5  ~ "Moderate",
+      TRUE     ~ "Acceptable"
+    )
+  )
+```
+
+
+## Random Forest Regression (For Feature Importance)
+
+```{r randomfoest 1,echo=FALSE, warning=FALSE, message=FALSE}
+#  Random Forest (Permutation) — Feature Selection 
+set.seed(20250922)  # keeping it reproducible
+
+# ---- choose the data frame safely ----
+.df <- mkt %>% mutate(.row_id = dplyr::row_number())
+
+# ---- Outcome & predictors ----
+# Outcome: overall instructor rating
+y <- "iRating"
+
+# Predictors: all i* and s* (minus the target), plus CourseType
+# (i_cols and s_cols were already defined earlier)
+x <- c(setdiff(i_cols, "iRating"), s_cols, "CourseType")
+
+# ---- modeling frame (RF can't handle NAs) ----
+dat_rf <- .df %>%
+  dplyr::select(dplyr::all_of(c(y, x))) %>%
+  tidyr::drop_na() %>% 
+  dplyr::mutate(
+    CourseType = as.factor(CourseType)
+  )
+
+# ---- optional: use response-count weights if you have them (w_completed) ----
+w_raw <- pmax(dat_rf$Completed, 0)
+w_completed <- if (sum(w_raw) > 0) {
+  w_raw / sum(w_raw) * nrow(dat_rf)
+} else {
+  rep(1, nrow(dat_rf))               
+}
+
+p <- length(x)
+
+# ---- fit random forest with Gini importance ----
+rf <- ranger(
+  formula         = iRating ~ . - Completed - Enrolled - .row_id,
+  data            = dat_rf,
+  num.trees       = 1000,
+  mtry            = max(1, floor(sqrt(p))),
+  importance      = "permutation",     # Gini is biased, so use permutation
+  case.weights    = w_completed,      # uses weights if available; ignored if NULL
+  seed            = 20250922
+)
+
+```
+
+
+
+
+
+The random forest used **1,000 trees** to find the best predictors of *iRating* from the
+full set of `i*` and `s*` survey items plus `CourseType`.\
+
+
+```{r randomforest 2,echo=FALSE, warning=FALSE, message=FALSE, fig.cap="Figure 8: Top 20 Predictors of iRating (Random Forest, Permutation Importance)."}
+# ---- extract & rank importance cleanly ----
+imp <- tibble::enframe(rf$variable.importance, name = "Variable", value = "PermDropMSE") %>%
+  arrange(desc(PermDropMSE))
+
+# ---- plot: top 20 predictors ----
+ggplot(head(imp, 20), aes(x = reorder(Variable, PermDropMSE), y = PermDropMSE)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "Permutation importance (increase in MSE if permuted)"
+  ) +
+  theme_minimal()
+
+```
+
+
+Feature ranking by **Permutation importance** (Figure 8) shows which inputs most
+reduce prediction error across trees:
+
+1.  **iDemo** — instructor uses demonstrations/examples effectively\
+2.  **iQuesEffect** — instructor responds effectively to questions\
+3.  **iTopic** — topics are clear and relevant\
+4.  **iWelQues** — students felt welcome to ask questions\
+5.  **iParticipate** — students encouraged to participate\
+6.  **iChallenged** — course appropriately challenging\
+7.  **iAskQues** — instructor asks questions to engage students\
+8.  **iUnderstand** — material presented was understandable\
+9.  **iPrepared** — instructor well prepared\
+10. **iAnalyProb** — opportunities for analytical/problem-solving
+
+These top 10 predictors are all instructor performance items,
+highlighting their dominant role in shaping overall ratings.
+
+For student behavior, **sEngaged** (student engagement) and
+**sPositive** (positive attitude) also appear in the top 20, indicating
+they also contribute meaningfully but to a lesser extent.
+
+## Multicollinearity Control via Conceptual Grouping
+
+Instructor items are numerous and conceptually overlapping. Treating
+many highly correlated items as separate predictors inflates standard
+errors and blurs interpretation. 
+
+Therefore a two-stage strategy was designed to 
+
+- Control multicollinearity \
+- Retain interpretability at the construct level 
+
+### Stage 1: Standardize and diagnose collinearity.
+
+All professor performance items were standardized to zero mean and unit
+variance so their scales are comparable.
+
+```{r standardize i* , echo=FALSE, warning=FALSE, message=FALSE}
+# Identify professor item columns (exclude the outcome)
+prof_item_cols <- c(
+  "iUnderstand",
+  "iWelQues",
+  "iTopic",
+  "iDemo",
+  "iQuesEffect",
+  "iAskQues",
+  "iAnalyProb",
+  "iParticipate",
+  "iChallenged",
+  "iPrepared",
+  "iRating"
+)
+prof_item_cols <- intersect(prof_item_cols, names(mkt))
+prof_x_cols    <- setdiff(prof_item_cols, "iRating") 
+
+# Standardize professor items
+mkt_profz <- mkt %>%
+  mutate(across(all_of(prof_x_cols), scale, .names = "{.col}"))
+
+# VIF check
+dat_vif_items <- mkt_profz %>%
+  dplyr::select(all_of(c("iRating", prof_x_cols))) %>%
+  drop_na()
+
+form_items <- as.formula(paste("iRating ~", paste(prof_x_cols, collapse = " + ")))
+lm_items   <- lm(form_items, data = dat_vif_items)
+
+v_items <- car::vif(lm_items)
+vif_items_tbl <- tibble(Variable = names(v_items), VIF = as.numeric(v_items)) %>%
+  arrange(desc(VIF))
+
+# Display VIF table
+vif_tbl %>%
+  mutate(VIF = round(VIF, 2)) %>%
+  knitr::kable(
+    caption = "Table 6: Item level VIFs for standardized professor items",
+    align   = c("l","r","c"),
+    format  = "html"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped","hover","condensed"),
+    full_width = FALSE, position = "center"
+  ) %>% 
+  row_spec(which(vif_tbl$Flag == "High"),
+           bold = TRUE, color = "white", background = "#d9534f")  %>% 
+  row_spec(which(vif_tbl$Flag == "Moderate"),
+           background = "#f0ad4e")
+
+```
+
+From Table 6, even after standardization, the multicollinearity issues among the professor performance items are still severe. Other method was needed to solve this problem.
+
+### Stage 2: Conceptual Grouping
+
+Survey items were aggregated into six conceptual constructs based on the survey's design. The mapping of items to their respective constructs is detailed below:
+
+-   **Questions Climate**: iWelQues, iAskQues, iQuesEffect
+
+-   **Instructor Quality**: iUnderstand, iTopic, iDemo, iAnalyProb
+
+-   **Engagement**: iParticipate
+
+-   **Intellectual Challenge**: iChallenged
+
+-   **Instructor Preparedness**: iPrepared
+
+```{r construct creation, echo=FALSE, warning=FALSE, message=FALSE}
+# Function to create standardized composite scores for constructs (standardize-then-average-then-standardize)
+mk_construct <- function(df, items){
+  items <- items[items %in% names(df)]
+  if (length(items) == 0) return(rep(NA_real_, nrow(df)))
+  if (length(items) == 1) {
+    as.numeric(scale(df[[items]]))
+  } else {
+    comp <- rowMeans(scale(df[, items, drop = FALSE]), na.rm = TRUE)
+    as.numeric(scale(comp))
+  }
+}
+
+# create constructs
+keep <- function(v) v[v %in% names(mkt_profz)]
+
+grp_questions <- keep(c("iWelQues","iAskQues","iQuesEffect"))
+grp_clarity   <- keep(c("iUnderstand","iTopic"))
+grp_demo      <- keep(c("iDemo","iAnalyProb"))
+
+# Create constructs in the data frame
+mkt_constr <- mkt_profz %>%
+  mutate(
+    Ques_Z = mk_construct(., grp_questions),
+    InstrQual_Z = mk_construct(., c(grp_clarity, grp_demo)),
+    Participate_Z  = mk_construct(., keep("iParticipate")),
+    Chall_Z= mk_construct(., keep("iChallenged")),
+    Prep_Z = mk_construct(., keep("iPrepared"))
+  )
+
+```
+
+```{r construct VIF, echo=FALSE, warning=FALSE, message=FALSE}
+# check correlations among constructs
+construct_vars2 <- c("Ques_Z", "InstrQual_Z","Participate_Z","Chall_Z","Prep_Z") 
+
+dat_vif2 <- mkt_constr %>%
+  dplyr::select(iRating, dplyr::all_of(construct_vars2)) %>%
+  tidyr::drop_na()
+
+lm2 <- lm(as.formula(paste("iRating ~", paste(construct_vars2, collapse=" + "))), data = dat_vif2)
+
+v_constr <- car::vif(lm2)
+vif_constr_tbl <- tibble::tibble(
+    Variable = names(v_constr),
+    VIF = as.numeric(v_constr)
+  ) %>%
+  dplyr::arrange(desc(VIF))
+
+knitr::kable(vif_constr_tbl, digits = 3,
+             caption = "Table 7: Construct-level collinearity (VIF) after conceptual grouping") %>%
+  kableExtra::kable_styling(full_width = FALSE)
+
+```
+
+Table 7 shows the VIFs for the five constructs are all below 6, indicating that
+conceptual grouping has effectively mitigated multicollinearity among
+professor performance measures. This allows us to include these
+constructs as predictors in regression models without severe
+collinearity issues.
+
+
+## Hypothesis Testing
+
+```{r model-fitting, echo=FALSE, warning=FALSE, message=FALSE}
+# Ensure needed columns
+mkt_constr <- mkt_constr %>%
+  mutate(
+    CourseType   = factor(CourseType),
+    sEngaged_Z   = as.numeric(scale(sEngaged)),
+    sPositive_Z  = as.numeric(scale(sPositive))
+  )
+# One analysis dataset for ALL models 
+df_all <- mkt_constr %>%
+  select(iRating, InstrQual_Z, Participate_Z, Chall_Z, Prep_Z, Ques_Z,
+         sEngaged_Z, sPositive_Z, CourseType, InstID, Completed) %>%
+  drop_na()
+
+# Weights: w_i = Completed_i / sum(Completed) * N, where N = nrow(df_all)
+eps <- 1e-6
+w_all <- pmax(df_all$Completed, eps)
+w_all <- (w_all / sum(w_all) )* nrow(df_all)
+
+# ----Fit ML versions for valid LRTs ------------------
+form_m1 <- iRating ~ InstrQual_Z + Participate_Z + Chall_Z + Prep_Z + Ques_Z + (1 | InstID)
+form_m1_randslope <- update(form_m1, . ~ . + (InstrQual_Z + Participate_Z + Chall_Z + Prep_Z + Ques_Z | InstID))
+
+
+m1_ML <- lmer(form_m1, data = df_all, weights = w_all, REML = FALSE)
+m1_random_slope_ML <- lmer(form_m1_randslope, data = df_all, weights = w_all, REML = FALSE)
+```
+
+```{r model-comparison, echo=FALSE, warning=FALSE, message=FALSE}
+# Model comparison via LRT and AIC
+#anova(m1_ML, m1_random_slope_ML) 
+```
+
+Based on the results of model comparison (Table 17 in Appendix) of the random intercept model (model 1, m1_ML) and the random intercept and slope model (model 1-2, m1_random_slope_ML), the random intercept and slope model did significantly improve fit over the random intercept model (p \< 0.001). Therefore, the random intercept and slope model will be used as the baseline for subsequent models.
+
+
+```{r further-models, echo=FALSE, warning=FALSE, message=FALSE}
+# Further models
+form_m2 <- update(form_m1_randslope, . ~ . + sEngaged_Z + sPositive_Z)
+form_m3 <- update(form_m2, . ~ . + CourseType)
+form_m4 <- update(form_m3, . ~ . + (InstrQual_Z + Participate_Z + Chall_Z + Prep_Z + Ques_Z + sEngaged_Z + sPositive_Z):CourseType)
+
+m2_ML <- lmer(form_m2, data = df_all, weights = w_all, REML = FALSE)
+m3_ML <- lmer(form_m3, data = df_all, weights = w_all, REML = FALSE)
+m4_ML <- lmer(form_m4, data = df_all, weights = w_all, REML = FALSE)
+```
+
+```{r model-comparison-2, echo=FALSE, warning=FALSE, message=FALSE}
+# Model comparison table
+kable(anova(m1_random_slope_ML, m2_ML, m3_ML, m4_ML),
+      caption = "Table 8: Model Comparison via Likelihood Ratio Tests") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+
+A series of nested linear mixed-effects models was compared using Likelihood Ratio Tests (LRT) to address the specified research questions. The goal of this procedure was not to select a single optimal model for prediction, but rather to test the significance of specific variable sets. 
+
+**From model 1 to model 2, adding student behavior measures (sEngaged_Z and sPositive_Z) did significantly improve fit (p-value = 0.0092), indicating that after accounting for professor performance, these student behaviors explain additional variance in overall ratings.**
+
+**From model 2 to model 3, adding CourseType not significantly improved fit (p-value = 1), suggesting that after accounting for professor performance and student behavior, CourseType does not explain additional variance in overall ratings. **
+
+**From model 3 to model 4, adding interaction terms between CourseType and all professor performance and student behavior measures significantly improved fit (p-value = 0.0054). This indicates that the effects of professor performance and student behavior on overall ratings vary by CourseType.**
+
+```{r model-summaries, echo=FALSE, warning=FALSE, message=FALSE}
+# ----Refit REML for reporting (optional but standard) ------------------
+m1_REML <- update(m1_random_slope_ML, REML = TRUE)
+m2_REML <- update(m2_ML, REML = TRUE)
+m3_REML <- update(m3_ML, REML = TRUE)
+m4_REML <- update(m4_ML, REML = TRUE)
+
+#summary(m1_REML) 
+#summary(m2_REML)  # Q1 Q2
+#summary(m3_REML)
+#summary(m4_REML)  # Q3
+
+# ---- Extract fixed effects tables for reporting ------------------
+fixef_tbl <- function(model) {
+  coefs <- summary(model)$coefficients
+  tibble::tibble(
+    Term = rownames(coefs),
+    Estimate = coefs[, "Estimate"],
+    Std_Error = coefs[, "Std. Error"],
+    t_value = coefs[, "t value"],
+    p_value = 2 * (1 - pnorm(abs(coefs[, "t value"])))  # two-tailed
+  ) %>%
+    mutate(
+      Estimate = round(Estimate, 3),
+      Std_Error = round(Std_Error, 3),
+      t_value = round(t_value, 3),
+      p_value = round(p_value, 4),
+      Significance = case_when(
+        p_value < 0.001 ~ "***",
+        p_value < 0.01  ~ "**",
+        p_value < 0.05  ~ "*",
+        p_value < 0.1   ~ ".",
+        TRUE           ~ ""
+      )
+    )
+}
+m1_fixef <- fixef_tbl(m1_REML)
+m2_fixef <- fixef_tbl(m2_REML)
+m3_fixef <- fixef_tbl(m3_REML)
+m4_fixef <- fixef_tbl(m4_REML)
+```
+
+
+## Results Interpretation
+
+### Effects of Professor Performance
+
+Model 1-2 assessed the main effects of professor performance measures. Instructor quality (InstrQual_Z), course challenge (Chall_Z), preparation (Prep_Z), and handling of questions (Ques_Z) were all highly significant, which means that better performance on these constructs is associated with higher overall ratings (iRating). 
+
+The significant effects of professor performance measures and condifidence intervals are shown in Table 9.
+
+```{r model-summaries-table-1, echo=FALSE, warning=FALSE, message=FALSE}
+# only list significant fixed effects and CI for model m1_random_slope_ML
+# CIs for fixed effects (Wald)
+ci_m1rs_fix_wald <- confint(m1_random_slope_ML, parm = "beta_", method = "Wald", level = 0.95, oldNames = FALSE)
+
+# table for coefficients with CIs
+m1rs_fixef <- fixef_tbl(m1_random_slope_ML) %>%
+  mutate(
+    CI_Lower = round(ci_m1rs_fix_wald[, 1], 3),
+    CI_Upper = round(ci_m1rs_fix_wald[, 2], 3)
+  ) %>% select(Term, Estimate, CI_Lower, CI_Upper, t_value, p_value, Significance)
+
+#filer only significant terms
+m1rs_fixef_sig <- m1rs_fixef %>% filter(p_value < 0.05)
+
+kable(m1rs_fixef_sig, caption = "Table 9: Significant Fixed Effects Estimates with 95% CI for Model 1-2") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+(The whole result of model 1-2 is shown in Appendix Table 18.)
+
+### Effects of Student Behavior
+
+```{r model-summaries-table-2, echo=FALSE, warning=FALSE, message=FALSE}
+#model 2 table only show student behavior measures effects and CI
+m2_fixef_ci <- as.data.frame(confint(m2_REML, parm = "beta_", method = "Wald", level = 0.95, oldNames = FALSE)) %>%
+  rownames_to_column("Term") %>%
+  filter(Term %in% c("sEngaged_Z", "sPositive_Z")) %>%
+  rename(CI_Lower = `2.5 %`, CI_Upper = `97.5 %`)
+m2_fixef <- m2_fixef %>%
+  inner_join(m2_fixef_ci, by = "Term") %>%
+  select(Term, Estimate, CI_Lower, CI_Upper, t_value, p_value, Significance)
+kable(m2_fixef, caption = "Table 10: Fixed Effects Estimates with 95% CI for Student Behavior Measures in Model 2") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "center")
+```
+
+
+Model 2 introduced student behavior measures to the baseline model. Tabke 10 showed that both student engagement (sEngaged_Z) and positive attitude (sPositive_Z) were not significant predictors of overall ratings, indicating that after accounting for professor performance, these student behaviors do not explain additional variance in iRating. Which means that **student behavior does not have a significant direct effect on overall ratings when professor performance is considered. **
+
+(The whole result of model 2 is shown in Appendix Table 19.)
+
+### Effects of Course Type
+
+```{r model-summaries-table-3, echo=FALSE, warning=FALSE, message=FALSE}
+# fix effects and CI for model 3 only show CourseType effects
+m3_fixef_ci <- as.data.frame(confint(m3_REML, parm = "beta_", method = "Wald", level = 0.95, oldNames = FALSE)) %>%
+  rownames_to_column("Term") %>%
+  filter(grepl("^CourseType", Term)) %>%
+  rename(CI_Lower = `2.5 %`, CI_Upper = `97.5 %`)
+m3_fixef <- m3_fixef %>%
+  inner_join(m3_fixef_ci, by = "Term") %>%
+  select(Term, Estimate, CI_Lower, CI_Upper, t_value, p_value, Significance)
+
+# display table
+kable(m3_fixef, caption = "Table 11: Fixed Effects Estimates with 95% CI for CourseType in Model 3") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "center")
+```
+
+
+Table 11 showed that CourseType was not significant in model 3, confirming the previous result.
+Which means that **after accounting for professor performance and student behavior, CourseType was not a significant predictor of overall ratings. **
+
+(The whole result of model 3 is shown in Appendix Table 20.)
+
+### Effects of Interaction between Course Type and Professor Performance/Student Behavior
+
+```{r model-summaries-table-4, echo=FALSE, warning=FALSE, message=FALSE}
+# only show InstrQual_Z, InstrQual_Z:MKT Core, InstrQual_Z:MKT Elective, InstrQual_Z:MKT Capstone and Chall_Z, Chall_Z:CourseTypeMKT Core, Chall_Z:CourseTypeMKT Elective, Chall_Z:CourseTypeMKT Capstone effects and CI for model 4
+
+m4_fixef_ci <- as.data.frame(confint(m4_REML, parm = "beta_", method = "Wald", level = 0.95, oldNames = FALSE)) %>%
+  rownames_to_column("Term") %>%
+  filter(Term %in% c("InstrQual_Z", "InstrQual_Z:CourseTypeMKT Core", "InstrQual_Z:CourseTypeMKT Elective", "InstrQual_Z:CourseTypeMKT Capstone",
+                     "Chall_Z", "Chall_Z:CourseTypeMKT Core", "Chall_Z:CourseTypeMKT Elective", "Chall_Z:CourseTypeMKT Capstone")) %>%
+  rename(CI_Lower = `2.5 %`, CI_Upper = `97.5 %`)
+m4_fixef <- m4_fixef %>%
+  inner_join(m4_fixef_ci, by = "Term") %>%
+  select(Term, Estimate, CI_Lower, CI_Upper, t_value, p_value, Significance)
+
+# display table
+kable(m4_fixef, caption = "Table 12: Fixed Effects Estimates with 95% CI for Key Terms in Model 4") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "center")
+```
+
+
+
+Model 4 added interaction terms between CourseType and all professor performance and student behavior measures.
+
+Table 12 presents a follow up analysis of the significant interaction between Instructor Quality and Course Type. The table details the simple slopes of Instructor Quality and Challenge for each course type to illustrate the nature of this interaction."
+
+**Instructor Quality (InstrQual_Z) and Course Type**
+
+- FSB Core (reference): slope=0.254 (p<0.001).\
+This means that for FSB Core courses, a one standard deviation 
+increase in Instructor Quality combined score is associated with a 0.254 increase in overall ratings.\
+
+- MKT Core: 0.254-0.112=0.142 (difference -0.112, p=0.0719).\
+This means that in MKT Core courses, the effect of Instructor Quality on overall ratings is 0.142, which is 0.112 lower than in FSB Core, but this difference is not significant at the 0.05 level.\
+
+- MKT Elective: 0.254-0.004=0.250(difference -0.004, p=0.9662).\
+This means that in MKT Elective courses, the effect of Instructor Quality on overall ratings is 0.250, which is 0.004 lower than in FSB Core, indicating that the effect is very similar to FSB Core, and the difference is not significant.\
+
+- MKT Capstone: 0.254-0.227=0.027 (difference -0.227, p=0.0013).\
+This means that in MKT Capstone courses, the effect of Instructor Quality on overall ratings is 0.027, which is 0.227 lower than in FSB Core, and this difference is significant.
+
+**Interpretation**: Instructor quality is strongly positive in most course types but substantially weaker in Capstone. It makes sense that Capstone courses may emphasize independent work over instructor-led clarity. 
+
+**Challenge (Chall_Z) and Course Type**
+
+- FSB Core: slope =-0.019 (p=0.6232).\
+This means that in FSB Core courses, a one standard deviation increase in Challenge combined score is associated with a 0.019 decrease in overall ratings, but this effect is not significant.\
+
+- MKT Core: -0.019+0.130=0.111 (difference +0.130, p=0.0055).\
+This means that in MKT Core courses, the effect of Challenge on overall ratings is 0.111, which is 0.130 higher than in FSB Core, and this difference is significant.\
+
+- MKT Elective: -0.019+0.094=0.075 (difference +0.094,	p=0.1040).\
+This means that in MKT Elective courses, the effect of Challenge on overall ratings is 0.075, which is 0.094 higher than in FSB Core, but this difference is not significant at the 0.05 level.\
+
+- MKT Capstone: -0.019+0.244=0.225 (difference +0.244, p=0.0009).\
+This means that in MKT Capstone courses, the effect of Challenge on overall ratings is 0.225, which is 0.244 higher than in FSB Core, and this difference is significant.
+
+**Interpretation**: Challenge is positively associated with ratings in MKT Core and Capstone, but not in FSB Core. It suggests that students in more advanced courses appreciate intellectual challenge more.
+
+(The whole result of model 4 is shown in Appendix Table 21.)
+
+# Discussion
+
+## Conclusions
+
+This analysis indicates that **professor performance is the primary driver of student evaluation ratings**. Specifically, instructor quality, preparation, and responsiveness to questions are consistent predictors of higher scores. Once these core teaching measures are accounted for, **student behaviors like engagement or a positive attitude have no detectable direct impact on ratings**.
+
+Interestingly, the importance of these teaching factors shifts depending on the course level. **While instructor quality is crucial in most courses, its direct impact is significantly smaller in advanced Capstone courses**. In these same advanced courses (Capstones and MKT Core), students place a higher value on intellectual challenge, which becomes a positive predictor of higher ratings. This suggests that student expectations shift in upper level courses. The emphasis moves from instructor led clarity toward a greater valuation of academic rigor and independent learning.
+
+## Strategic Recommendations
+
+**Focus on Core Teaching Fundamentals**: Instructor quality, preparation, and responsiveness are universal drivers of positive evaluations. These should be the foundation of any instructional improvement initiative.
+
+**Tailor Teaching Style for Advanced Courses**: The data shows a clear opportunity to optimize teaching in upper-level courses.
+
+- In MKT Core and Capstone courses, instructors should not shy away from increasing the intellectual challenge, as students view it favorably.
+
+- In Capstones, effort is best invested in mentoring and project scaffolding rather than perfecting traditional lecture delivery, as students prioritize rigor and independence in this setting.
+
+## Limitations
+
+Since the last interaction model is very complex and has many parameters, it will overfit the data. A final step of refitting a more simplified model that retains only the most significant and substantively important factors identified in this analysis. This will yield a more robust model and increase confidence in the precise magnitude of these key effects.
+
+# References
+
+1. Hughes, M. (2025, September 10). Practicum in Data Analysis. STA660,
+    Miami University.
+    <https://miamioh.instructure.com/courses/237421/pages/project-2-issues-and-resources?module_item_id=6017374>
+
+2. R Core Team (2024). R: A Language and Environment for Statistical Computing. R Foundation for Statistical Computing, Vienna, Austria. <https://www.R-project.org/>.
+
+3. Wickham H, Hester J, Bryan J (2024). readr: Read Rectangular Text Data. R package version 2.1.5, <https://CRAN.R-project.org/package=readr>.
+
+4. Wickham H, François R, Henry L, Müller K, Vaughan D (2023). dplyr: A Grammar of Data Manipulation. R package version 1.1.4, <https://CRAN.R-project.org/package=dplyr>.
+
+5. Wickham H, Averick M, Bryan J, Chang W, McGowan LD, François R, Grolemund G, Hayes A, Henry L, Hester J, Kuhn M, Pedersen TL, Miller E, Bache SM, Müller K, Ooms J, Robinson D, Seidel DP, Spinu V, Takahashi K, Vaughan D, Wilke C, Woo K, Yutani H (2019). “Welcome to the tidyverse.” Journal of Open Source Software, 4(43), 1686. doi:10.21105/joss.01686 <https://doi.org/10.21105/joss.01686>.
+
+6. Wickham H, Henry L (2025). purrr: Functional Programming Tools. R package version 1.0.4, <https://CRAN.R-project.org/package=purrr>.
+
+7. Xie Y (2025). knitr: A General-Purpose Package for Dynamic Report Generation in R. R package version 1.50, <https://yihui.org/knitr/>.
+
+8. Zhu H (2024). kableExtra: Construct Complex Table with 'kable' and Pipe Syntax. R package version 1.4.0, <https://CRAN.R-project.org/package=kableExtra>.
+
+9. Pedersen T (2024). patchwork: The Composer of Plots. R package version 1.3.0, <https://CRAN.R-project.org/package=patchwork>.
+
+10. Wickham H, François R (2024). tidyr: Tidy Messy Data. R package version 1.3.1, <https://CRAN.R-project.org/package=tidyr>.
+
+11. Müller K, Wickham H, James H (2024). tibble: Simple Data Frames. R package version 3.2.1, <https://CRAN.R-project.org/package=tibble>.
+
+12. Wickham H (2024). ggplot2: Create Elegant Data Visualisations Using the Grammar of Graphics. R package version 3.5.1, <https://CRAN.R-project.org/package=ggplot2>.
+
+13. Auguie B (2024). gridExtra: Miscellaneous Functions for "Grid" Graphics. R package version 2.3, <https://CRAN.R-project.org/package=gridExtra>.
+
+14. Wilke CO (2024). cowplot: Streamlined Plot Theme and Plot Annotations for 'ggplot2'. R package version 1.1.3, <https://CRAN.R-project.org/package=cowplot>.
+
+15. Wei T, Simko V (2021). corrplot: Visualization of a Correlation Matrix. R package version 0.92, <https://CRAN.R-project.org/package=corrplot>.
+
+16. Fox J, Weisberg S (2019). An R Companion to Applied Regression, Third Edition. Sage, Thousand Oaks CA. <https://socialsciences.mcmaster.ca/jfox/Books/Companion/>.
+
+17. Wickham H (2024). reshape2: Flexibly Reshape Data: A Reboot of the Reshape Package. R package version 1.4.4, <https://CRAN.R-project.org/package=reshape2>.
+
+18. Wickham H (2024). stringr: Simple, Consistent Wrappers for Common String Operations. R package version 1.5.1, <https://CRAN.R-project.org/package=stringr>.
+
+19. Wright MN, Ziegler A (2017). "ranger: A Fast Implementation of Random Forests for High Dimensional Data in C++ and R." Journal of Statistical Software, 77(1), 1-17. doi:10.18637/jss.v077.i01 <https://www.jstatsoft.org/article/view/v077i01>.
+
+20. Kuznetsova A, Brockhoff PB, Christensen RHB (2017). "lmerTest Package: Tests in Linear Mixed Effects Models." Journal of Statistical Software, 82(13), 1-26. doi:10.18637/jss.v082.i13 <https://www.jstatsoft.org/article/view/v082i13>.
+
+21. Clark, M. (n.d.). Mixed Models with R: Random Slopes. <https://m-clark.github.io/mixed-models-with-R/random_slopes.html>
+
+22. UCLA Statistical Consulting Group. (n.d.). Introduction to Linear Mixed Models. <https://stats.oarc.ucla.edu/other/mult-pkg/introduction-to-linear-mixed-models/>
+
+23. Castro, M. (2020, September 28). Random Forests with caret: Accuracy and variable importance. YouTube. <https://www.youtube.com/watch?v=OYWnuiPbmJQ>
+
+24. UC Business Analytics R Users Group. (n.d.). Random Forests. <https://uc-r.github.io/random_forests>
+
+# Appendix
+
+## Participation Rate Overview
+
+The participation rate in course evaluations can significantly impact
+the reliability and representativeness of the results. Low participation
+rates may lead to biased evaluations that do not accurately reflect the
+views of the entire student body. Therefore, understanding participation
+rates across instructors and course types is crucial.
+
+```{r participation-dist, message=FALSE,echo=FALSE, warning=FALSE}
+mkt <- mkt %>%
+  mutate(
+    Participation = if_else(Enrolled > 0, Completed / Enrolled, NA_real_),
+    Participation = pmin(pmax(Participation, 0), 1)  # clamp to [0,1]
+  )
+
+# Quick summary
+part_summ <- mkt %>%
+  summarise(
+    n = n(),
+    mean = mean(Participation, na.rm = TRUE),
+    sd   = sd(Participation, na.rm = TRUE),
+    p25  = quantile(Participation, 0.25, na.rm = TRUE),
+    p50  = quantile(Participation, 0.50, na.rm = TRUE),
+    p75  = quantile(Participation, 0.75, na.rm = TRUE)
+  )
+
+knitr::kable(part_summ, digits = 2,
+             caption = "Table 13: Participation Summary") %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                            full_width = FALSE, position = "center")
+```
+
+```{r participation-histogram, echo=FALSE, warning=FALSE, fig.cap="Figure 9: Distribution of Section Participation Rates."}
+# Histogram
+ggplot(mkt, aes(x = Participation)) +
+  geom_histogram(binwidth = 0.05, boundary = 0, closed = "left",
+                 fill = "steelblue", color = "black") +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0,1)) +
+  labs(x = "Participation (Completed / Enrolled)", y = "Count") +
+  theme_minimal()
+```
+
+Based on Table 13 and Figure 9, the histogram displays the distribution
+of section participation rates, measured as the proportion of completed
+evaluations relative to enrolled students. The distribution is wide,
+with participation ranging from near 0% to 100%. Most sections cluster
+between 40% and 60%, suggesting that nearly half of enrolled students
+typically complete evaluations. Notably, there are substantial counts at
+the upper end (90–100%), indicating that some sections achieved very
+high response rates. The presence of both mid level clusters and
+high end peaks highlights variability in student engagement with course
+evaluations across sections.
+
+
+## Partispation rate by Course Type
+
+The participation rate may also vary by course type. The average
+participation rate for each course type was calculated and visualized
+below.
+
+```{r participation-rate-course, echo=FALSE, warning=FALSE, fig.width=6, fig.height=4, fig.cap="Figure 10: Average Participation Rate by Course Type."}
+# Calculate average participation rate by CourseType
+participation_rate_course <- mkt %>%
+  group_by(CourseType) %>%
+  mutate(Participation = (Completed / Enrolled) * 100) %>%
+  summarise(avg_participation = mean(Participation, na.rm = TRUE)) %>%
+  arrange(desc(avg_participation))
+# Plot average participation rate by CourseType
+ggplot(participation_rate_course, aes(x = CourseType, y = avg_participation)) +
+  geom_bar(stat = "identity", fill = "steelblue", width = 0.5) +
+  geom_text(aes(label = round(avg_participation, 1)), vjust = -0.5) +
+  labs(x = "Course Type",
+       y = "Average Participation Rate (%)") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black"))
+```
+
+Figure 10 shows participation differs across course types: MKT Core is
+highest (≈65.6%), followed by MKT Elective (≈57.3%) and FSB Core
+(≈56.2%), while MKT Capstone is lowest (≈51.7%). These gaps indicate
+systematic differences in response propensity by course type, which can
+induce response bias in unweighted ratings if low participation types
+are over or under represented.
+
+
+## Bar Chart of Teaching Performance Measures
+
+```{r bar-chart, echo=FALSE, warning=FALSE, fig.width=7, fig.height=4, fig.cap="Figure 11: Mean Professor Performance Measures with Standard Deviation."}
+# Prepare data for bar chart
+bar_data <- prof_means %>%
+  mutate(Measure = factor(Measure, levels = Measure))
+# Create bar chart
+ggplot(bar_data, aes(x = Measure, y = mean)) +
+  geom_bar(stat = "identity", fill = "#4682B4", width = 0.8) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.2) +
+  labs(x = "Professor Performance Measures",
+       y = "Mean Score (0-4 Scale)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black"))
+  
+
+```
+
+From Figure 11 and Table 4, professor performance measures generally have
+high mean scores, indicating positive evaluations from students. The
+measures with the highest means include iEnthusiasm (3.57), iWelQues
+(3.54), and iParticipate (3.48), suggesting that students perceive their
+instructors as enthusiastic, welcoming of questions, and encouraging
+participation.
+
+However, the overall rating (iRating) has the lowest mean (3.19),
+suggesting that while specific aspects of teaching are rated highly, the
+overall evaluation is more moderate. The standard deviations indicate
+variability in student responses, with iRating showing one of the
+highest variabilities (0.56), reflecting the potential reason for the
+lower overall rating is the diversity of student structures and
+expectations.
+
+## Bar Chart of Student Behavior Measures
+
+```{r bar-chart-student, echo=FALSE, warning=FALSE, fig.width=3, fig.height=4, fig.cap="Figure 12: Mean Student Behavior Measures with Standard Deviation."}
+# Prepare data for bar chart
+bar_data_student <- student_means %>%
+  mutate(Measure = factor(Measure, levels = Measure))
+# Create bar chart
+ggplot(bar_data_student, aes(x = Measure, y = mean)) +
+  geom_bar(stat = "identity", fill = "darkorange") +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd),
+                width = 0.2) +
+  labs(x = "Student Behavior Measures",
+       y = "Mean Score (0-4 Scale)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black"))
+```
+
+From Figure 12 and Table 4, student behavior measures also show generally
+high mean scores, indicating that students report positive engagement
+with their courses. The measures with the highest means include
+sAttended (3.78) and sUpToDate (3.67), suggesting that students are
+consistently attending classes and keeping up with coursework.
+
+## Visualize ceiling effect with density plot
+
+```{r ceiling-density, fig.width=7, fig.height=5, message=FALSE,echo=FALSE, warning=FALSE, fig.cap="Figure 13: Density Plot of Overall Instructor Rating (iRating) by Course Type (Dashed = Ceiling Threshold 3.5)."}
+ggplot(mkt, aes(x = iRating, fill = CourseType)) +
+  geom_density(alpha = 0.4) +
+  geom_vline(xintercept = 3.5, linetype = "dashed", color = "red") +
+  labs(x = "iRating (0–4)", y = "Density") +
+  theme_minimal()
+```
+
+Figure 8 the density plot shows instructor ratings (iRatings) are consistently high across all course types, with a substantial portion of scores clustering near the upper end of the scale. A ceiling effect is evident, particularly for MKT Elective and Capstone courses, where ratings are heavily concentrated at or above the 3.5 threshold. While FSB Core and MKT Core courses peaks just below this threshold, the overall clustering suggests that the rating scale limits the differentiation among high performing instructors.
+
+
+## Random Forest Regression Parameter Settings
+
+```{r rf-setup, echo=FALSE, warning=FALSE, message=FALSE}
+# ---- table: model call summary ----
+rf_summary <- tibble::tibble(
+  `Parameter` = c("Number of Trees","Mtry (variables per split)",
+                  "Importance Measure","Case Weights Used",
+                  "OOB Prediction Error (MSE)","OOB R-squared","Training N"),
+  `Value` = c(rf$num.trees, rf$mtry, rf$importance.mode,
+              "Completed (sum w = N)",
+              round(rf$prediction.error, 4),
+              round(1 - rf$prediction.error / stats::var(dat_rf[[y]]), 4),
+              nrow(dat_rf))
+)
+
+knitr::kable(rf_summary, caption = "Table 14: Random Forest Model Call Summary",
+             col.names = c("Parameter","Value")) %>% 
+  kableExtra::kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                            full_width = FALSE, position = "center") %>%
+  kableExtra::column_spec(1, bold = TRUE, border_right = TRUE)
+```
+
+Key model fit diagnostics:
+
+-   **Sample size:** 589 course sections after cleaning and removing
+    invalid/missing responses.\
+-   **Number of predictors (p):** 21 candidate features (the i\* and s\*
+    blocks and CourseType).\
+-   **mtry = max(1, floor(sqrt(p))):** At each split the algorithm
+    randomly considers about sqrt(21) ≈ 4.58, rounded down to 4
+    predictors, promoting diversity among trees.\
+-   **Target node size = 5:** Trees stop splitting when leaves have \~5
+    sections, preventing overfitting.\
+-   **Out-of-bag MSE = 0.034:** Low average squared error on held-out
+    data.\
+-   **OOB** $R^2 \approx 0.89$: The model explains nearly 90% of the
+    variance in overall ratings on unseen data, which means a strong predictive power
+    without obvious overfit.
+
+
+## An Alternative Method of Multicollinearity Control: LASSO
+
+As a robustness check, LASSO regression was also applied to select
+professor performance items. The LASSO penalizes the absolute size of
+coefficients, shrinking some to zero and effectively performing variable
+selection.
+
+```{r lasso, echo=FALSE, warning=FALSE, message=FALSE}
+# Load libraries
+library(caret)
+library(glmnet)
+# Read data and define weights
+df <- read.csv("/Users/rongrongqian/Desktop/660/2/CombinedData.csv")
+df$Weight <- df$Completed / sum(df$Completed) * nrow(df)
+
+set.seed(123)
+fitControl <- trainControl(method = "cv", number = 10)
+lassoFit <- train(iRating ~ sPositive + sAttended + sPrepared + sEngaged + sUpToDate + sHelp + 
+                    iStandards + iChallenged + iPrepared + iConcepts + iEnthusiasm + iAskQues +
+                    iQuesEffect + iHours + iWelQues + iParticipate + iDemo + iAnalyProb + 
+                    iTopic + iUnderstand,
+                  data = df, 
+                  method = "glmnet", 
+                  weights = df$Weight,
+                  trControl = fitControl, tuneLength = 20,
+                  tuneGrid = expand.grid(alpha = 1, 
+                                          lambda = exp(seq(log(1e-4), log(0.3), by = 0.05))))
+# Optimal penalty parameter
+#lassoFit$bestTune
+
+```
+
+```{r lasso-coef, echo=FALSE, warning=FALSE, message=FALSE}
+# Coefficients at one-standard-error lambda (largest lambda within 1 SE of min)
+lambda_1se <- lassoFit$bestTune$lambda + lassoFit$results$RMSESD[lassoFit$results$lambda == lassoFit$bestTune$lambda]
+coef_1se <- predict(lassoFit$finalModel, s = lambda_1se, type = "coefficients")
+
+coef_df <- data.frame(
+  Predictor = coef_1se@Dimnames[[1]],
+  Coefficient = as.numeric(coef_1se)
+)
+coef_df <- subset(coef_df, Coefficient != 0)
+# Display non-zero coefficients
+knitr::kable(coef_df, caption = "Table 15: LASSO Selected Predictors and Coefficients") %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                            full_width = FALSE, position = "center")
+
+```
+
+
+In Table 15, the lasso results indicate that the most important predictors of overall instructor rating. The selected predictors and their coefficients are shown in the table above. 
+
+```{r lasso-vif, echo=FALSE, warning=FALSE, message=FALSE}
+# calculate vifs for lasso-selected predictors after standardization
+# Standardize selected predictors
+selected_predictors <- coef_df$Predictor[coef_df$Predictor != "(Intercept)"]
+mkt_lasso <- mkt %>%
+  mutate(across(all_of(selected_predictors), scale, .names = "{.col}_z"))
+predictors_z <- paste0(selected_predictors, "_z")
+form_lasso <- as.formula(paste("iRating ~", paste(predictors_z, collapse = " + ")))
+m_lasso <- lm(form_lasso, data = mkt_lasso)
+v <- car::vif(m_lasso)
+# Create VIF table
+if (is.matrix(v)) {
+  vif_tbl <- as.data.frame(v) %>%
+    rownames_to_column("Variable") %>%
+    mutate(
+      # Adjust GVIF to comparable VIF scale when df > 1
+      VIF = ifelse(df > 1, GVIF^(1/(2*df)), GVIF)
+    ) %>%
+    select(Variable, VIF)
+} else {
+  vif_tbl <- tibble(Variable = names(v), VIF = as.numeric(v))
+}
+vif_tbl <- vif_tbl %>%  arrange(desc(VIF)) %>%
+  mutate(Variable = stringr::str_remove(Variable, "_z$")) %>%
+  mutate(
+    Flag = case_when(
+      VIF >= 10 ~ "High",
+      VIF > 5 & VIF < 10 ~ "Moderate",
+      TRUE ~ "Acceptable"
+    )
+  )
+knitr::kable(vif_tbl, digits = 3,
+             caption = "Table 16: VIFs for LASSO-Selected Predictors") %>%
+  kableExtra::kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                            full_width = FALSE, position = "center") %>%
+  kableExtra::row_spec(which(vif_tbl$Flag == "High"), color = "white",
+                       background = "#d9534f") %>%
+  kableExtra::row_spec(which(vif_tbl$Flag == "Moderate"), background = "#f0ad4e")
+```
+
+The VIFs in Table 16 for the LASSO selected predictors are still somewhat high, with one predictor (iDemo) exceeding 10, indicating high multicollinearity. Several others fall into the moderate range (5 \< VIF \< 10). Only three predictors have acceptable VIFs (≤ 5).
+
+## Model Comparison
+
+```{r model-comparison-lrt, echo=FALSE, warning=FALSE, message=FALSE}
+# kable table for AIC comparison
+kable(anova(m1_ML, m1_random_slope_ML),
+      caption = "Table 17: Likelihood Ratio Test Comparing Random Intercept vs Random Intercept and Random Slope Model") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "center")
+```
+
+
+## Results of Models
+
+```{r m1-table, echo=FALSE, warning=FALSE, message=FALSE}
+kable(m1rs_fixef, caption = "Table 18: Fixed Effects Estimates with 95% CI for Model 1-2") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "center")
+```
+
+```{r m2-table, echo=FALSE, warning=FALSE, message=FALSE}
+# CIs and fixed effects for model 2
+ci_m2_fix_wald <- confint(m2_REML, parm = "beta_", method = "Wald", level = 0.95, oldNames = FALSE)
+# table for coefficients with CIs
+m2_fixef_full <- fixef_tbl(m2_REML) %>%
+  mutate(
+    CI_Lower = round(ci_m2_fix_wald[, 1], 3),
+    CI_Upper = round(ci_m2_fix_wald[, 2], 3)
+  ) %>% select(Term, Estimate, CI_Lower, CI_Upper, t_value, p_value, Significance)
+kable(m2_fixef_full, caption = "Table 19: Fixed Effects Estimates with 95% CI for Model 2") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "center")
+```
+
+
+```{r m3-table, echo=FALSE, warning=FALSE, message=FALSE}
+# CIs and fixed effects for model 3
+ci_m3_fix_wald <- confint(m3_REML, parm = "beta_", method = "Wald", level = 0.95, oldNames = FALSE)
+# table for coefficients with CIs
+m3_fixef_full <- fixef_tbl(m3_REML) %>%
+  mutate(
+    CI_Lower = round(ci_m3_fix_wald[, 1], 3),
+    CI_Upper = round(ci_m3_fix_wald[, 2], 3)
+  ) %>% select(Term, Estimate, CI_Lower, CI_Upper, t_value, p_value, Significance)
+kable(m3_fixef_full, caption = "Table 20: Fixed Effects Estimates with 95% CI for Model 3") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "center")
+```
+
+
+```{r m4-table, echo=FALSE, warning=FALSE, message=FALSE}
+# CIs and fixed effects for model 4
+ci_m4_fix_wald <- confint(m4_REML, parm = "beta_", method = "Wald", level = 0.95, oldNames = FALSE)
+# table for coefficients with CIs
+m4_fixef_full <- fixef_tbl(m4_REML) %>%
+  mutate(
+    CI_Lower = round(ci_m4_fix_wald[, 1], 3),
+    CI_Upper = round(ci_m4_fix_wald[, 2], 3)
+  ) %>% select(Term, Estimate, CI_Lower, CI_Upper, t_value, p_value, Significance)
+kable(m4_fixef_full, caption = "Table 21: Fixed Effects Estimates with 95% CI for Model 4") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "center")
+```
+
+
+
+
+
+
